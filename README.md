@@ -91,15 +91,6 @@ mvn test
 - ExternalMetadataServiceTest — простая проверка получения жанра для известной книги.
 - GenreImageServiceTest — проверка получения иконки (может падать в headless/без-инета).
 
-Бейджи / стикеры
----------------
-Скопируйте и вставьте в README или в профиль:
-```markdown
-![Stars](https://img.shields.io/github/stars/kuum-oss/someone?style=flat-square)
-![Forks](https://img.shields.io/github/forks/kuum-oss/someone?style=flat-square)
-![Issues](https://img.shields.io/github/issues/kuum-oss/someone?style=flat-square)
-![License](https://img.shields.io/github/license/kuum-oss/someone?style=flat-square)
-```
 
 Контрибуция
 ----------
@@ -108,11 +99,7 @@ PR и issues приветствуются. Рекомендации:
 - Для новых фич — создайте issue сначала.
 - Запускайте mvn test перед отправкой PR.
 
-Лицензия
---------
-Добавьте файл LICENSE или укажите тип лицензии в README (например, MIT). Бейдж лицензии будет отражать это.
 
-Контакты
 --------
 Автор: kuum-oss  
 Если нужна помощь с локализацией, интеграцией API-ключа Google Books или адаптацией под другие рабочие процессы — откройте issue или напишите PR.
