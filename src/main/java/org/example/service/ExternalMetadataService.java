@@ -2,101 +2,60 @@ package org.example.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 public class ExternalMetadataService {
-    private static final Logger logger = LoggerFactory.getLogger(ExternalMetadataService.class);
-    private static final String GOOGLE_BOOKS_API = "https://www.googleapis.com/books/v1/volumes?q=";
-    private final HttpClient httpClient;
-    private final ObjectMapper objectMapper;
 
-    public ExternalMetadataService() {
-        this.httpClient = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build();
-        this.objectMapper = new ObjectMapper();
-    }
+    private static final String API = "https://www.googleapis.com/books/v1/volumes?q=";
+    private final HttpClient client = HttpClient.newHttpClient();
+    private final ObjectMapper mapper = new ObjectMapper();
 
     public Optional<String> fetchGenre(String title, String author) {
-        return fetchVolumeInfo(title, author).map(vi -> {
-            JsonNode categories = vi.get("categories");
-            if (categories != null && categories.isArray() && !categories.isEmpty()) {
-                return categories.get(0).asText();
-            }
-            return null;
-        });
+        return fetchInfo(title, author)
+                .map(v -> v.path("categories").isArray()
+                        ? v.path("categories").get(0).asText()
+                        : null);
     }
 
     public Optional<byte[]> fetchCover(String title, String author) {
-        return fetchVolumeInfo(title, author).flatMap(vi -> {
-            JsonNode imageLinks = vi.get("imageLinks");
-            if (imageLinks != null) {
-                String thumbnailUrl = imageLinks.has("thumbnail") ? imageLinks.get("thumbnail").asText() : 
-                                     imageLinks.has("smallThumbnail") ? imageLinks.get("smallThumbnail").asText() : null;
-                if (thumbnailUrl != null) {
-                    return downloadImage(thumbnailUrl);
-                }
-            }
-            return Optional.empty();
-        });
+        return fetchInfo(title, author)
+                .map(v -> v.path("imageLinks").path("thumbnail").asText(null))
+                .flatMap(this::downloadImage);
     }
 
-    private Optional<JsonNode> fetchVolumeInfo(String title, String author) {
-        if (title == null || title.isBlank() || "Unknown".equalsIgnoreCase(title)) {
-            return Optional.empty();
-        }
-
+    private Optional<JsonNode> fetchInfo(String title, String author) {
         try {
-            String query = "intitle:" + title;
-            if (author != null && !author.isBlank() && !"Unknown Author".equalsIgnoreCase(author)) {
-                query += "+inauthor:" + author;
-            }
+            String q = "intitle:" + title + "+inauthor:" + author;
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(API + URLEncoder.encode(q, StandardCharsets.UTF_8)))
+                    .GET().build();
 
-            String encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8);
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(GOOGLE_BOOKS_API + encodedQuery))
-                    .header("Accept", "application/json")
-                    .GET()
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-
-            if (response.statusCode() == 200) {
-                JsonNode root = objectMapper.readTree(response.body());
-                JsonNode items = root.get("items");
-                if (items != null && items.isArray() && !items.isEmpty()) {
-                    return Optional.of(items.get(0).get("volumeInfo"));
+            HttpResponse<String> r = client.send(req, HttpResponse.BodyHandlers.ofString());
+            if (r.statusCode() == 200) {
+                JsonNode items = mapper.readTree(r.body()).path("items");
+                if (items.isArray() && !items.isEmpty()) {
+                    return Optional.of(items.get(0).path("volumeInfo"));
                 }
             }
-        } catch (Exception e) {
-            logger.error("Error fetching volume info for title: {} author: {}", title, author, e);
-        }
+        } catch (Exception ignored) {}
         return Optional.empty();
     }
 
-    private Optional<byte[]> downloadImage(String urlString) {
+    private Optional<byte[]> downloadImage(String url) {
+        if (url == null) return Optional.empty();
         try {
-            // Google Books API thumbnail URLs often use http, try to force https if possible or just use as is
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(urlString.replace("http://", "https://")))
-                    .GET()
-                    .build();
-            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-            if (response.statusCode() == 200) {
-                return Optional.of(response.body());
-            }
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(url.replace("http://", "https://")))
+                    .GET().build();
+            HttpResponse<byte[]> r = client.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            return r.statusCode() == 200 ? Optional.of(r.body()) : Optional.empty();
         } catch (Exception e) {
-            logger.error("Error downloading image from {}", urlString, e);
+            return Optional.empty();
         }
-        return Optional.empty();
     }
 }

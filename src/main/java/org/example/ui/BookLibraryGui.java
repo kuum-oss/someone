@@ -42,11 +42,14 @@ public class BookLibraryGui extends JFrame {
     private JLabel statusLabel;
     private JButton organizeButton;
     private JButton cancelButton;
+    private JButton exitButton;
 
     private SwingWorker<Void, Integer> currentWorker;
-
     private ResourceBundle messages;
     private Locale currentLocale;
+
+    // Для подсчета времени сканирования
+    private long startTime;
 
     public BookLibraryGui() {
         initLocale(Locale.ENGLISH);
@@ -92,15 +95,17 @@ public class BookLibraryGui extends JFrame {
         cancelButton = new JButton(messages.getString("button.cancel"));
         cancelButton.setEnabled(false);
         cancelButton.addActionListener(e -> {
-            if (currentWorker != null) {
-                currentWorker.cancel(true);
-            }
+            if (currentWorker != null) currentWorker.cancel(true);
         });
+
+        exitButton = new JButton(messages.getString("button.exit"));
+        exitButton.addActionListener(e -> exitApplication());
 
         JPanel top = new JPanel(new BorderLayout());
         top.add(statusLabel, BorderLayout.CENTER);
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttons.add(exitButton);
         buttons.add(cancelButton);
         buttons.add(organizeButton);
 
@@ -124,14 +129,11 @@ public class BookLibraryGui extends JFrame {
         lang.add(ru);
 
         JMenu theme = new JMenu(messages.getString("menu.theme"));
-        JMenuItem auto = new JMenuItem(messages.getString("theme.system"));
-        auto.addActionListener(e -> changeTheme(null));
         JMenuItem light = new JMenuItem(messages.getString("theme.light"));
         light.addActionListener(e -> changeTheme(false));
         JMenuItem dark = new JMenuItem(messages.getString("theme.dark"));
         dark.addActionListener(e -> changeTheme(true));
 
-        theme.add(auto);
         theme.add(light);
         theme.add(dark);
 
@@ -147,27 +149,18 @@ public class BookLibraryGui extends JFrame {
     private void changeTheme(Boolean dark) {
         FlatAnimatedLafChange.showSnapshot();
         try {
-            if (dark == null) {
-                // "System" — оставляем текущую тему без изменений
-                // (FlatLaf не имеет авто-переключения)
-                return;
-            }
-
-            if (dark) {
+            if (dark != null && dark) {
                 UIManager.setLookAndFeel(new FlatMacDarkLaf());
             } else {
                 UIManager.setLookAndFeel(new FlatMacLightLaf());
             }
-
             SwingUtilities.updateComponentTreeUI(this);
-
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
             FlatAnimatedLafChange.hideSnapshotWithAnimation();
         }
     }
-
 
     private void initLocale(Locale locale) {
         this.currentLocale = locale;
@@ -180,6 +173,7 @@ public class BookLibraryGui extends JFrame {
         statusLabel.setText(messages.getString("status.drag.drop"));
         organizeButton.setText(messages.getString("button.organize"));
         cancelButton.setText(messages.getString("button.cancel"));
+        exitButton.setText(messages.getString("button.exit"));
         root.setUserObject(messages.getString("tree.root"));
         treeModel.reload();
     }
@@ -208,6 +202,7 @@ public class BookLibraryGui extends JFrame {
         currentBooks.clear();
         organizeButton.setEnabled(false);
         cancelButton.setEnabled(true);
+        startTime = System.currentTimeMillis();
         statusLabel.setText(messages.getString("status.preparing"));
 
         currentWorker = new SwingWorker<>() {
@@ -232,10 +227,18 @@ public class BookLibraryGui extends JFrame {
 
             @Override
             protected void process(List<Integer> chunks) {
+                int processed = chunks.get(chunks.size() - 1);
+                int total = currentBooks.size();
+                int remaining = total - processed;
+                long elapsed = System.currentTimeMillis() - startTime;
+
                 statusLabel.setText(
                         MessageFormat.format(
                                 messages.getString("status.processed"),
-                                chunks.get(chunks.size() - 1)
+                                processed,
+                                total,
+                                remaining,
+                                formatTime(elapsed)
                         )
                 );
             }
@@ -254,27 +257,30 @@ public class BookLibraryGui extends JFrame {
         currentWorker.execute();
     }
 
+    private String formatTime(long millis) {
+        long sec = millis / 1000;
+        long min = sec / 60;
+        sec %= 60;
+        return min + "m " + sec + "s";
+    }
+
     /* ===================== ORGANIZE ===================== */
 
     private void startOrganizing() {
         JFileChooser chooser = new JFileChooser();
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        chooser.setDialogTitle(messages.getString("chooser.title"));
 
         Path defaultDir = Paths.get(System.getProperty("user.home"), "Desktop", "collection");
-        try {
-            java.nio.file.Files.createDirectories(defaultDir);
-            chooser.setSelectedFile(defaultDir.toFile());
-        } catch (IOException ignored) {}
+        try { java.nio.file.Files.createDirectories(defaultDir); } catch (IOException ignored) {}
 
+        chooser.setSelectedFile(defaultDir.toFile());
         if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
 
         Path targetDir = chooser.getSelectedFile().toPath();
         cancelButton.setEnabled(true);
         organizeButton.setEnabled(false);
 
-        currentWorker = new SwingWorker<Void, Integer>() {
-
+        currentWorker = new SwingWorker<>() {
             @Override
             protected Void doInBackground() {
                 int i = 0;
@@ -283,19 +289,18 @@ public class BookLibraryGui extends JFrame {
                     try {
                         fileService.organizeBook(book, targetDir);
                         publish(++i);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
+                    } catch (IOException e) { e.printStackTrace(); }
                 }
                 return null;
             }
 
             @Override
             protected void process(List<Integer> chunks) {
+                int processed = chunks.get(chunks.size() - 1);
                 statusLabel.setText(
                         MessageFormat.format(
                                 messages.getString("status.copying"),
-                                chunks.get(chunks.size() - 1),
+                                processed,
                                 currentBooks.size()
                         )
                 );
@@ -322,16 +327,17 @@ public class BookLibraryGui extends JFrame {
             root.add(langNode);
 
             genres.forEach((genre, seriesMap) -> {
-                DefaultMutableTreeNode genreNode = new DefaultMutableTreeNode(genre);
+                DefaultMutableTreeNode genreNode = new DefaultMutableTreeNode(genre, true);
                 langNode.add(genreNode);
 
                 seriesMap.forEach((series, list) -> {
-                    DefaultMutableTreeNode seriesNode = new DefaultMutableTreeNode(series);
+                    DefaultMutableTreeNode seriesNode = new DefaultMutableTreeNode(series, true);
                     genreNode.add(seriesNode);
 
-                    list.forEach(book ->
-                            seriesNode.add(new DefaultMutableTreeNode(book))
-                    );
+                    list.forEach(book -> {
+                        DefaultMutableTreeNode bookNode = new DefaultMutableTreeNode(book, false);
+                        seriesNode.add(bookNode);
+                    });
                 });
             });
         });
@@ -348,18 +354,29 @@ public class BookLibraryGui extends JFrame {
 
     private class BookTreeCellRenderer extends DefaultTreeCellRenderer {
         @Override
-        public Component getTreeCellRendererComponent(
-                JTree tree, Object value, boolean sel, boolean exp,
-                boolean leaf, int row, boolean focus) {
+        public Component getTreeCellRendererComponent(JTree tree, Object value,
+                                                      boolean sel, boolean exp, boolean leaf, int row, boolean focus) {
 
             super.getTreeCellRendererComponent(tree, value, sel, exp, leaf, row, focus);
 
             if (value instanceof DefaultMutableTreeNode node &&
                     node.getUserObject() instanceof Book book) {
+
                 setText(book.getTitle());
+                setIcon(genreImageService.getGenreIcon(book.getGenre()));
             }
             return this;
         }
+    }
+
+    /* ===================== EXIT ===================== */
+
+    private void exitApplication() {
+        if (currentWorker != null && !currentWorker.isDone()) {
+            currentWorker.cancel(true);
+        }
+        dispose();
+        System.exit(0);
     }
 
     public static void main(String[] args) {
