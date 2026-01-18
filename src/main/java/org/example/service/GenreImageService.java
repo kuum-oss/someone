@@ -16,8 +16,8 @@ public class GenreImageService {
 
     static {
         // Ссылки на анимированные стикеры/гифки
-        GENRE_GIFS.put("Fiction", "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExM2Z5Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1z/3o7bu3XilJ5BOiSGic/giphy.gif");
-        GENRE_GIFS.put("Fantasy", "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJqZ3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1z/l41lTfO7K9Lp3FmCs/giphy.gif");
+        GENRE_GIFS.put("Fiction", "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJqZ3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1z/3o7bu3XilJ5BOiSGic/giphy.gif");
+        GENRE_GIFS.put("Fantasy", "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJqZ3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1z/l41lTfO7K9Lp3FmCs/giphy.gif");
         GENRE_GIFS.put("Science Fiction", "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJqZ3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1z/3o7TKSjP6S7J7n9J7y/giphy.gif");
         GENRE_GIFS.put("Mystery", "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJqZ3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1z/3o7TKURi8fJ5j2J9zG/giphy.gif");
         GENRE_GIFS.put("Horror", "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJqZ3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1z/3o7TKVUn7iM8FMEU24/giphy.gif");
@@ -28,28 +28,34 @@ public class GenreImageService {
     }
 
     public ImageIcon getGenreIcon(String genre) {
-        if (genre == null) return null;
-        
+        if (genre == null || GraphicsEnvironment.isHeadless()) return null;
+
         return cache.computeIfAbsent(genre, g -> {
+            // Fallback icon from resources
+            ImageIcon fallback = null;
+            try {
+                URL localUrl = getClass().getResource("/icons/book.png");
+                if (localUrl != null) {
+                    fallback = new ImageIcon(localUrl);
+                }
+            } catch (Exception ignored) {}
+
             try {
                 String urlString = findGifUrl(g);
                 URL url = new URL(urlString);
                 ImageIcon icon = new ImageIcon(url);
-                
+
                 if (icon.getIconWidth() > 1) {
-                    // Если это GIF, ресайзить сложнее, так как теряется анимация в простом Image.getScaledInstance
-                    // Но для дерева нам нужны маленькие иконки.
-                    // Если это обычная картинка - ресайзим. Если GIF - надеемся на размер или используем как есть.
                     if (urlString.endsWith(".gif")) {
-                        return icon; // Оставляем как есть для анимации
+                        return icon;
                     }
                     Image img = icon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH);
                     return new ImageIcon(img);
                 }
             } catch (Exception e) {
-                // Ignore
+                // Ignore and use fallback
             }
-            return null;
+            return fallback;
         });
     }
 

@@ -23,7 +23,7 @@ public class MetadataService {
             parser.parse(in, new BodyContentHandler(-1), md, new ParseContext());
         } catch (Exception ignored) {}
 
-        String title = defaultIfBlank(md.get("dc:title"), path.getFileName().toString());
+        String title = normalizeTitle(defaultIfBlank(md.get("dc:title"), stripExtension(path.getFileName().toString())));
         String author = defaultIfBlank(md.get("dc:creator"), "Unknown Author");
         String language = defaultIfBlank(md.get("dc:language"), "Unknown");
         String series = defaultIfBlank(md.get("fb2:series-name"), "No Series");
@@ -45,6 +45,30 @@ public class MetadataService {
                 .format(ext(path))
                 .cover(cover)
                 .build();
+    }
+
+    String normalizeTitle(String title) {
+        if (title == null || title.isBlank()) return title;
+        
+        // Заменяем дефисы и подчеркивания на пробелы
+        String normalized = title.replaceAll("[-_]", " ");
+        
+        // Разделяем по пробелам и делаем каждое слово с большой буквы
+        String[] words = normalized.split("\\s+");
+        StringBuilder sb = new StringBuilder();
+        for (String word : words) {
+            if (!word.isEmpty()) {
+                sb.append(Character.toUpperCase(word.charAt(0)))
+                  .append(word.substring(1).toLowerCase())
+                  .append(" ");
+            }
+        }
+        return sb.toString().trim();
+    }
+
+    private String stripExtension(String fileName) {
+        int lastDot = fileName.lastIndexOf('.');
+        return (lastDot == -1) ? fileName : fileName.substring(0, lastDot);
     }
 
     private String defaultIfBlank(String v, String def) {

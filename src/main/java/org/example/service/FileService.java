@@ -8,7 +8,9 @@ import java.nio.file.*;
 public class FileService {
 
     public void organizeBook(Book book, Path baseDir) throws IOException {
-
+        if (Thread.currentThread().isInterrupted()) {
+            return;
+        }
         Path root = baseDir.getFileName() != null &&
                 baseDir.getFileName().toString().equalsIgnoreCase("collection")
                 ? baseDir

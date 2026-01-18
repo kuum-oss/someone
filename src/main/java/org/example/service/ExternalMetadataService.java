@@ -7,12 +7,18 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.*;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Optional;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class ExternalMetadataService {
 
+    private static final Logger LOGGER = Logger.getLogger(ExternalMetadataService.class.getName());
     private static final String API = "https://www.googleapis.com/books/v1/volumes?q=";
-    private final HttpClient client = HttpClient.newHttpClient();
+    private final HttpClient client = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
     private final ObjectMapper mapper = new ObjectMapper();
 
     public Optional<String> fetchGenre(String title, String author) {
@@ -33,6 +39,7 @@ public class ExternalMetadataService {
             String q = "intitle:" + title + "+inauthor:" + author;
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(API + URLEncoder.encode(q, StandardCharsets.UTF_8)))
+                    .timeout(Duration.ofSeconds(10))
                     .GET().build();
 
             HttpResponse<String> r = client.send(req, HttpResponse.BodyHandlers.ofString());
@@ -41,8 +48,12 @@ public class ExternalMetadataService {
                 if (items.isArray() && !items.isEmpty()) {
                     return Optional.of(items.get(0).path("volumeInfo"));
                 }
+            } else {
+                LOGGER.warning("Google Books API returned status code: " + r.statusCode());
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Error fetching book info from Google Books API", e);
+        }
         return Optional.empty();
     }
 
@@ -51,11 +62,17 @@ public class ExternalMetadataService {
         try {
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(url.replace("http://", "https://")))
+                    .timeout(Duration.ofSeconds(15))
                     .GET().build();
             HttpResponse<byte[]> r = client.send(req, HttpResponse.BodyHandlers.ofByteArray());
-            return r.statusCode() == 200 ? Optional.of(r.body()) : Optional.empty();
+            if (r.statusCode() == 200) {
+                return Optional.of(r.body());
+            } else {
+                LOGGER.warning("Error downloading image, status code: " + r.statusCode());
+            }
         } catch (Exception e) {
-            return Optional.empty();
+            LOGGER.log(Level.SEVERE, "Error downloading cover image: " + url, e);
         }
+        return Optional.empty();
     }
 }
