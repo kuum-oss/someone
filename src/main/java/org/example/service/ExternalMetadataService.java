@@ -5,13 +5,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ExternalMetadataService {
 
@@ -22,9 +27,19 @@ public class ExternalMetadataService {
     private final HttpClient client;
     private final ObjectMapper mapper;
     private final String googleApiKey;
+    private final ThumbnailCacheService diskCache = new ThumbnailCacheService();
+    
+    // Simple in-memory cache
+    private final Map<String, JsonNode> infoCache = new ConcurrentHashMap<>();
+    private final Map<String, byte[]> imageCache = new ConcurrentHashMap<>();
 
     public ExternalMetadataService() {
-        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build(), new ObjectMapper(), null);
+        this(HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .followRedirects(HttpClient.Redirect.ALWAYS)
+                .build(), 
+             new ObjectMapper(), 
+             System.getenv("GOOGLE_API_KEY"));
     }
 
     public ExternalMetadataService(HttpClient client, ObjectMapper mapper, String googleApiKey) {
@@ -119,6 +134,9 @@ public class ExternalMetadataService {
     }
 
     private Optional<JsonNode> fetchInfo(String title, String author) {
+        String cacheKey = (title + "|" + author).toLowerCase();
+        if (infoCache.containsKey(cacheKey)) return Optional.of(infoCache.get(cacheKey));
+
         try {
             String q = "intitle:" + title + "+inauthor:" + author;
             String url = GOOGLE_BOOKS_API + URLEncoder.encode(q, StandardCharsets.UTF_8);
@@ -131,14 +149,16 @@ public class ExternalMetadataService {
                     .timeout(Duration.ofSeconds(10))
                     .GET().build();
 
-            HttpResponse<String> r = client.send(req, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> r = sendWithRetry(req);
             if (r.statusCode() == 200) {
                 JsonNode items = mapper.readTree(r.body()).path("items");
                 if (items.isArray() && !items.isEmpty()) {
-                    return Optional.of(items.get(0).path("volumeInfo"));
+                    JsonNode info = items.get(0).path("volumeInfo");
+                    infoCache.put(cacheKey, info);
+                    return Optional.of(info);
                 }
             } else {
-                LOGGER.warn("Google Books API returned status code: {}", r.statusCode());
+                LOGGER.warn("Google Books API returned status code: {} for {}", r.statusCode(), title);
             }
         } catch (Exception e) {
             LOGGER.error("Error fetching book info from Google Books API", e);
@@ -146,8 +166,40 @@ public class ExternalMetadataService {
         return Optional.empty();
     }
 
+    private HttpResponse<String> sendWithRetry(HttpRequest request) throws IOException, InterruptedException {
+        int maxRetries = 3;
+        int delay = 1000;
+        HttpResponse<String> response = null;
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                int status = response.statusCode();
+                if (status == 200) return response;
+                if (status == 429 || status >= 500) {
+                    LOGGER.warn("HTTP {}, retrying in {}ms (attempt {})", status, delay, i + 1);
+                } else {
+                    return response;
+                }
+            } catch (IOException e) {
+                if (i == maxRetries - 1) throw e;
+                LOGGER.warn("Network error, retrying in {}ms (attempt {})", delay, i + 1);
+            }
+            Thread.sleep(delay);
+            delay *= 2;
+        }
+        return response;
+    }
+
     private Optional<byte[]> downloadImage(String url) {
-        if (url == null) return Optional.empty();
+        if (url == null || url.isBlank()) return Optional.empty();
+        if (imageCache.containsKey(url)) return Optional.of(imageCache.get(url));
+        
+        byte[] cached = diskCache.get(url);
+        if (cached != null) {
+            imageCache.put(url, cached);
+            return Optional.of(cached);
+        }
+
         try {
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(url.replace("http://", "https://")))
@@ -156,7 +208,18 @@ public class ExternalMetadataService {
                     .GET().build();
             HttpResponse<byte[]> r = client.send(req, HttpResponse.BodyHandlers.ofByteArray());
             if (r.statusCode() == 200) {
-                return Optional.of(r.body());
+                String contentType = r.headers().firstValue("Content-Type").orElse("");
+                if (!contentType.startsWith("image/")) {
+                    LOGGER.warn("Downloaded content is not an image: {} for URL: {}", contentType, url);
+                    return Optional.empty();
+                }
+
+                byte[] body = r.body();
+                if (isValidImage(body)) {
+                    imageCache.put(url, body);
+                    diskCache.put(url, body);
+                    return Optional.of(body);
+                }
             } else {
                 LOGGER.warn("Error downloading image, status code: {} for URL: {}", r.statusCode(), url);
             }
@@ -164,5 +227,15 @@ public class ExternalMetadataService {
             LOGGER.error("Error downloading cover image: {}", url, e);
         }
         return Optional.empty();
+    }
+
+    private boolean isValidImage(byte[] data) {
+        if (data == null || data.length < 100) return false;
+        try {
+            BufferedImage img = ImageIO.read(new ByteArrayInputStream(data));
+            return img != null && img.getWidth() > 0 && img.getHeight() > 0;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

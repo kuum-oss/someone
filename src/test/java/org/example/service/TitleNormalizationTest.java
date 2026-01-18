@@ -28,7 +28,7 @@ public class TitleNormalizationTest {
         // Сделаем normalizeTitle package-private в MetadataService.
         MetadataService service = new MetadataService();
         assertEquals("Ubivstvo Za Etiketom", service.normalizeTitle("ubivstvo-za-etiketom"));
-        assertEquals("War And Peace", service.normalizeTitle("war_and_peace"));
+        assertEquals("War and Peace", service.normalizeTitle("war_and_peace"));
         assertEquals("Example Title", service.normalizeTitle("  example---title  "));
     }
 }

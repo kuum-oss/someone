@@ -3,6 +3,7 @@ package org.example.service;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
+import org.apache.tika.parser.Parser;
 import org.apache.tika.sax.BodyContentHandler;
 import org.example.model.Book;
 import org.slf4j.Logger;
@@ -14,16 +15,15 @@ import java.nio.file.Path;
 import java.util.Optional;
 
 public class MetadataService {
-
     private static final Logger LOGGER = LoggerFactory.getLogger(MetadataService.class);
-    private final AutoDetectParser parser;
+    private final Parser parser;
     private final ExternalMetadataService external;
 
     public MetadataService() {
         this(new AutoDetectParser(), new ExternalMetadataService());
     }
 
-    public MetadataService(AutoDetectParser parser, ExternalMetadataService external) {
+    public MetadataService(Parser parser, ExternalMetadataService external) {
         this.parser = parser;
         this.external = external;
     }
@@ -110,17 +110,26 @@ public class MetadataService {
     String normalizeTitle(String title) {
         if (title == null || title.isBlank()) return title;
         
-        // Заменяем дефисы и подчеркивания на пробелы
-        String normalized = title.replaceAll("[-_]", " ");
+        // Remove multiple dots or underscores
+        String normalized = title.replaceAll("[-_.]", " ");
         
-        // Разделяем по пробелам и делаем каждое слово с большой буквы
+        // Split by whitespace
         String[] words = normalized.split("\\s+");
         StringBuilder sb = new StringBuilder();
-        for (String word : words) {
+        
+        // Small words that should usually be lowercase
+        java.util.Set<String> smallWords = java.util.Set.of("a", "an", "the", "and", "or", "in", "on", "at", "to", "for", "of", "with", "и", "или", "в", "на", "с");
+        
+        for (int i = 0; i < words.length; i++) {
+            String word = words[i].toLowerCase();
             if (!word.isEmpty()) {
-                sb.append(Character.toUpperCase(word.charAt(0)))
-                  .append(word.substring(1).toLowerCase())
-                  .append(" ");
+                if (i > 0 && smallWords.contains(word) && i < words.length - 1) {
+                    sb.append(word);
+                } else {
+                    sb.append(Character.toUpperCase(word.charAt(0)))
+                      .append(word.substring(1));
+                }
+                sb.append(" ");
             }
         }
         return sb.toString().trim();

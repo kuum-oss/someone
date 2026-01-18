@@ -11,6 +11,8 @@ import org.example.service.GenreImageService;
 import org.example.service.LibraryScanner;
 import org.example.service.MetadataService;
 import org.example.ui.components.BookDetailsPanel;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import javax.swing.border.LineBorder;
@@ -20,6 +22,7 @@ import javax.swing.tree.DefaultTreeModel;
 import java.awt.*;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.dnd.*;
+import java.awt.event.KeyEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -28,15 +31,18 @@ import java.nio.file.Paths;
 import java.text.MessageFormat;
 import java.util.*;
 import java.util.List;
+import java.util.prefs.Preferences;
 
 public class BookLibraryGui extends JFrame {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(BookLibraryGui.class);
     private final MetadataService metadataService = new MetadataService();
     private final BookOrganizer bookOrganizer = new BookOrganizer();
     private final FileService fileService = new FileService();
     private final GenreImageService genreImageService = new GenreImageService();
 
     private final List<Book> currentBooks = new ArrayList<>();
+    private final Preferences prefs = Preferences.userNodeForPackage(BookLibraryGui.class);
 
     private DefaultMutableTreeNode root;
     private DefaultTreeModel treeModel;
@@ -60,21 +66,100 @@ public class BookLibraryGui extends JFrame {
     private long startTime;
 
     public BookLibraryGui() {
-        initLocale(Locale.ENGLISH);
+        initLocale(new Locale(prefs.get("language", "en")));
         initLookAndFeel();
         initUI();
         initMenuBar();
         setupDragAndDrop();
+        setupContextMenus();
+        setupHotkeys();
     }
 
     /* ===================== INIT ===================== */
 
     private void initLookAndFeel() {
         try {
-            if (!(UIManager.getLookAndFeel() instanceof FlatLaf)) {
+            String theme = prefs.get("theme", "light");
+            if (theme.equals("dark")) {
+                UIManager.setLookAndFeel(new FlatMacDarkLaf());
+            } else {
                 UIManager.setLookAndFeel(new FlatMacLightLaf());
             }
         } catch (Exception ignored) {}
+    }
+
+    private void setupContextMenus() {
+        JPopupMenu popupMenu = new JPopupMenu();
+        JMenuItem openItem = new JMenuItem("Open"); // Localize later if needed
+        openItem.addActionListener(e -> {
+            DefaultMutableTreeNode node = (DefaultMutableTreeNode) tree.getLastSelectedPathComponent();
+            if (node != null && node.getUserObject() instanceof Book book) {
+                openBook(book);
+            }
+        });
+        JMenuItem showInFolderItem = new JMenuItem("Show in folder");
+        showInFolderItem.addActionListener(e -> {
+            DefaultMutableTreeNode node = (DefaultMutableTreeNode) tree.getLastSelectedPathComponent();
+            if (node != null && node.getUserObject() instanceof Book book) {
+                showInFolder(book);
+            }
+        });
+        JMenuItem removeItem = new JMenuItem("Remove from list");
+        removeItem.addActionListener(e -> {
+            DefaultMutableTreeNode node = (DefaultMutableTreeNode) tree.getLastSelectedPathComponent();
+            if (node != null && node.getUserObject() instanceof Book book) {
+                currentBooks.remove(book);
+                updateTree(currentBooks);
+            }
+        });
+        popupMenu.add(openItem);
+        popupMenu.add(showInFolderItem);
+        popupMenu.addSeparator();
+        popupMenu.add(removeItem);
+
+        tree.setComponentPopupMenu(popupMenu);
+    }
+
+    private void setupHotkeys() {
+        // Ctrl+F or Cmd+F for search
+        int menuShortcutKeyMask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+        searchField.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_F, menuShortcutKeyMask), "search");
+        searchField.getActionMap().put("search", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                searchField.requestFocusInWindow();
+                searchField.selectAll();
+            }
+        });
+
+        // Delete key to remove book
+        tree.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "remove");
+        tree.getActionMap().put("remove", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                DefaultMutableTreeNode node = (DefaultMutableTreeNode) tree.getLastSelectedPathComponent();
+                if (node != null && node.getUserObject() instanceof Book book) {
+                    currentBooks.remove(book);
+                    updateTree(currentBooks);
+                }
+            }
+        });
+    }
+
+    private void showInFolder(Book book) {
+        try {
+            File file = book.getFilePath().toFile();
+            if (com.formdev.flatlaf.util.SystemInfo.isWindows) {
+                Runtime.getRuntime().exec("explorer.exe /select," + file.getAbsolutePath());
+            } else if (com.formdev.flatlaf.util.SystemInfo.isMacOS) {
+                Runtime.getRuntime().exec(new String[]{"open", "-R", file.getAbsolutePath()});
+            } else {
+                Desktop.getDesktop().open(file.getParentFile());
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to show file in folder", e);
+        }
     }
 
     private void initUI() {
@@ -276,8 +361,10 @@ public class BookLibraryGui extends JFrame {
         try {
             if (dark != null && dark) {
                 UIManager.setLookAndFeel(new FlatMacDarkLaf());
+                prefs.put("theme", "dark");
             } else {
                 UIManager.setLookAndFeel(new FlatMacLightLaf());
+                prefs.put("theme", "light");
             }
             SwingUtilities.updateComponentTreeUI(this);
         } catch (Exception e) {
@@ -307,6 +394,7 @@ public class BookLibraryGui extends JFrame {
 
     private void changeLanguage(Locale locale) {
         initLocale(locale);
+        prefs.put("language", locale.getLanguage());
         setTitle(messages.getString("app.title"));
         statusLabel.setText(messages.getString("status.drag.drop"));
         organizeButton.setText(messages.getString("button.organize"));
@@ -350,13 +438,25 @@ public class BookLibraryGui extends JFrame {
 
     private void openBook(Book book) {
         try {
-            Desktop.getDesktop().open(book.getFilePath().toFile());
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().open(book.getFilePath().toFile());
+            } else {
+                copyToClipboard(book.getFilePath().toString());
+                JOptionPane.showMessageDialog(this, 
+                    "Desktop is not supported. File path copied to clipboard.",
+                    "Info", JOptionPane.INFORMATION_MESSAGE);
+            }
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this,
                     messages.getString("error.open_file") + "\n" + e.getMessage(),
                     messages.getString("error.title"),
                     JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private void copyToClipboard(String text) {
+        java.awt.datatransfer.StringSelection selection = new java.awt.datatransfer.StringSelection(text);
+        java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, selection);
     }
 
     /* ===================== DRAG & DROP ===================== */
@@ -401,10 +501,14 @@ public class BookLibraryGui extends JFrame {
         progressBar.setValue(0);
         progressBar.setVisible(true);
 
-        LibraryScanner scanner = new LibraryScanner(files, currentBooks, metadataService, 
+        LibraryScanner scanner = new LibraryScanner(files, metadataService, 
+            books -> {
+                currentBooks.addAll(books);
+                updateTree(currentBooks);
+            },
             processed -> {
                 int total = approxTotal;
-                int remaining = total - processed;
+                int remaining = Math.max(0, total - processed);
                 long elapsed = System.currentTimeMillis() - startTime;
 
                 if (!progressBar.isIndeterminate()) {
@@ -415,15 +519,14 @@ public class BookLibraryGui extends JFrame {
                         MessageFormat.format(
                                 messages.getString("status.processed"),
                                 processed,
-                                total,
-                                Math.max(0, remaining),
+                                Math.max(processed, total),
+                                remaining,
                                 formatTime(elapsed)
                         )
                 );
             },
             () -> {
                 cancelButton.setEnabled(false);
-                updateTree(currentBooks);
                 organizeButton.setEnabled(!currentBooks.isEmpty());
                 statusLabel.setText(
                         MessageFormat.format(messages.getString("status.found"), currentBooks.size())
@@ -467,13 +570,22 @@ public class BookLibraryGui extends JFrame {
         chooser.setDialogTitle(messages.getString("chooser.title"));
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
 
-        Path defaultDir = Paths.get(System.getProperty("user.home"), "Desktop", "collection");
+        String lastDir = prefs.get("lastExportDir", null);
+        Path defaultDir;
+        if (lastDir != null) {
+            defaultDir = Paths.get(lastDir);
+        } else {
+            defaultDir = Paths.get(System.getProperty("user.home"), "Desktop", "collection");
+        }
+        
         try { java.nio.file.Files.createDirectories(defaultDir); } catch (IOException ignored) {}
 
         chooser.setSelectedFile(defaultDir.toFile());
         if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
 
         Path targetDir = chooser.getSelectedFile().toPath();
+        prefs.put("lastExportDir", targetDir.toString());
+        
         cancelButton.setEnabled(true);
         organizeButton.setEnabled(false);
 

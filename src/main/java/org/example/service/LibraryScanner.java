@@ -9,20 +9,22 @@ import java.io.File;
 import java.util.*;
 import java.util.function.Consumer;
 
-public class LibraryScanner extends SwingWorker<Void, Integer> {
+public class LibraryScanner extends SwingWorker<Void, Book> {
     private static final Logger LOGGER = LoggerFactory.getLogger(LibraryScanner.class);
     private final List<File> files;
-    private final List<Book> currentBooks;
     private final MetadataService metadataService;
+    private final Consumer<List<Book>> onBooksFound;
     private final Consumer<Integer> onProgress;
     private final Runnable onDone;
     private long startTime;
+    private int processedCount = 0;
 
-    public LibraryScanner(List<File> files, List<Book> currentBooks, MetadataService metadataService, 
+    public LibraryScanner(List<File> files, MetadataService metadataService, 
+                          Consumer<List<Book>> onBooksFound,
                           Consumer<Integer> onProgress, Runnable onDone) {
         this.files = files;
-        this.currentBooks = currentBooks;
         this.metadataService = metadataService;
+        this.onBooksFound = onBooksFound;
         this.onProgress = onProgress;
         this.onDone = onDone;
     }
@@ -55,8 +57,8 @@ public class LibraryScanner extends SwingWorker<Void, Integer> {
                 }
             } else if (isBookFile(f)) {
                 try {
-                    currentBooks.add(metadataService.extractMetadata(f.toPath()));
-                    publish(currentBooks.size());
+                    Book book = metadataService.extractMetadata(f.toPath());
+                    publish(book);
                 } catch (Exception e) {
                     LOGGER.warn("Failed to extract metadata from file: {}", f.getAbsolutePath(), e);
                 }
@@ -70,8 +72,10 @@ public class LibraryScanner extends SwingWorker<Void, Integer> {
     }
 
     @Override
-    protected void process(List<Integer> chunks) {
-        onProgress.accept(chunks.get(chunks.size() - 1));
+    protected void process(List<Book> chunks) {
+        processedCount += chunks.size();
+        onBooksFound.accept(chunks);
+        onProgress.accept(processedCount);
     }
 
     @Override

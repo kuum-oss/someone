@@ -40,6 +40,13 @@ public class FileService {
             Path sourcePath = book.getFilePath();
             Path targetPath = target.resolve(sourcePath.getFileName());
 
+            // Check free space
+            long fileSize = Files.size(sourcePath);
+            long freeSpace = Files.getFileStore(target.getRoot() != null ? target.getRoot() : baseDir).getUsableSpace();
+            if (freeSpace < fileSize) {
+                throw new IOException("Not enough free space on disk. Required: " + fileSize + ", Available: " + freeSpace);
+            }
+
             // Используем copy + REPLACE_EXISTING, но можно рассмотреть move, если файлы на том же диске.
             // Для безопасности оставляем copy.
             Files.copy(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING);

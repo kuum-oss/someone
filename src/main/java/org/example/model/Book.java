@@ -54,6 +54,32 @@ public class Book {
     public byte[] getCover() { return cover; }
     public byte[] getAuthorPhoto() { return authorPhoto; }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Book book = (Book) o;
+        return Objects.equals(title, book.title) &&
+                Objects.equals(author, book.author) &&
+                Objects.equals(filePath, book.filePath);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(title, author, filePath);
+    }
+
+    @Override
+    public String toString() {
+        return "Book{" +
+                "title='" + title + '\'' +
+                ", author='" + author + '\'' +
+                ", genre='" + genre + '\'' +
+                ", year='" + year + '\'' +
+                ", format='" + format + '\'' +
+                '}';
+    }
+
     public static Builder builder() { return new Builder(); }
 
     public static class Builder {
