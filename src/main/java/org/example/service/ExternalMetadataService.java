@@ -28,9 +28,79 @@ public class ExternalMetadataService {
                         : null);
     }
 
-    public Optional<byte[]> fetchCover(String title, String author) {
+    public Optional<String> fetchDescription(String title, String author) {
         return fetchInfo(title, author)
-                .map(v -> v.path("imageLinks").path("thumbnail").asText(null))
+                .map(v -> v.path("description").asText(null));
+    }
+
+    public Optional<String> fetchYear(String title, String author) {
+        return fetchInfo(title, author)
+                .map(v -> v.path("publishedDate").asText(null))
+                .map(d -> d != null && d.length() >= 4 ? d.substring(0, 4) : null);
+    }
+
+    public Optional<byte[]> fetchAuthorPhoto(String author) {
+        if (author == null || author.isBlank() || author.equalsIgnoreCase("Unknown Author")) {
+            return Optional.empty();
+        }
+        try {
+            // Пытаемся найти именно автора через Open Library или аналогичный сервис, 
+            // либо через поиск в Google Books с фокусом на автора.
+            String q = URLEncoder.encode(author, StandardCharsets.UTF_8);
+            
+            // 1. Пробуем Open Library (там часто есть фото авторов по имени)
+            HttpRequest olReq = HttpRequest.newBuilder()
+                    .uri(URI.create("https://openlibrary.org/search/authors.json?q=" + q))
+                    .timeout(Duration.ofSeconds(10))
+                    .GET().build();
+            HttpResponse<String> olRes = client.send(olReq, HttpResponse.BodyHandlers.ofString());
+            if (olRes.statusCode() == 200) {
+                JsonNode docs = mapper.readTree(olRes.body()).path("docs");
+                if (docs.isArray() && !docs.isEmpty()) {
+                    String key = docs.get(0).path("key").asText();
+                    if (key != null && !key.isEmpty()) {
+                        // Формат ссылки на фото в Open Library: https://covers.openlibrary.org/a/olid/ID-M.jpg
+                        String photoUrl = "https://covers.openlibrary.org/a/olid/" + key + "-M.jpg";
+                        Optional<byte[]> photo = downloadImage(photoUrl);
+                        if (photo.isPresent() && photo.get().length > 1000) { // Проверка, что это не заглушка (маленький файл)
+                            return photo;
+                        }
+                    }
+                }
+            }
+
+            // 2. Если не вышло, пробуем Google Books (хотя там редко именно фото автора, чаще обложки)
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://www.googleapis.com/books/v1/volumes?q=inauthor:" + q + "&maxResults=1"))
+                    .timeout(Duration.ofSeconds(10))
+                    .GET().build();
+
+            HttpResponse<String> r = client.send(req, HttpResponse.BodyHandlers.ofString());
+            if (r.statusCode() == 200) {
+                JsonNode items = mapper.readTree(r.body()).path("items");
+                if (items.isArray() && !items.isEmpty()) {
+                    // Мы не берем thumbnail из volumeInfo, так как это обложка книги.
+                    // К сожалению, Google Books API редко предоставляет прямую ссылку на фото автора.
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Error fetching author photo for: " + author, e);
+        }
+        return Optional.empty();
+    }
+
+    public Optional<byte[]> fetchCover(String title, String author) {
+        if (title == null || title.isBlank() || title.equalsIgnoreCase("Unknown Title")) {
+            return Optional.empty();
+        }
+        return fetchInfo(title, author)
+                .map(v -> {
+                    String url = v.path("imageLinks").path("thumbnail").asText(null);
+                    if (url == null) {
+                        url = v.path("imageLinks").path("smallThumbnail").asText(null);
+                    }
+                    return url;
+                })
                 .flatMap(this::downloadImage);
     }
 

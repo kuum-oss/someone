@@ -17,7 +17,7 @@ public class FileService {
                 : baseDir.resolve("collection");
 
         Path target = root
-                .resolve(safe(book.getLanguage()))
+                .resolve(safe(normalizeLanguage(book.getLanguage())))
                 .resolve(safe(book.getGenre()));
 
         if (!"No Series".equalsIgnoreCase(book.getSeries())) {
@@ -36,5 +36,16 @@ public class FileService {
     private String safe(String s) {
         return (s == null || s.isBlank()) ? "Unknown"
                 : s.replaceAll("[\\\\/:*?\"<>|]", "_");
+    }
+
+    private String normalizeLanguage(String lang) {
+        if (lang == null || lang.isBlank()) return "Unknown";
+        String l = lang.toLowerCase().trim();
+        if (l.contains("-")) {
+            l = l.split("-")[0];
+        } else if (l.contains("_")) {
+            l = l.split("_")[0];
+        }
+        return l;
     }
 }
