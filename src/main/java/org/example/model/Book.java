@@ -15,8 +15,16 @@ public class Book {
     private final Path filePath;
     private final String format;
     private final String description;
-    private final byte[] cover;
-    private final byte[] authorPhoto;
+    private byte[] cover;
+    private byte[] authorPhoto;
+
+    // We can use a small cache or just keep them as is, 
+    // but the recommendation was to consider memory.
+    // Given the task, let's at least make them non-final to allow clearing if needed,
+    // or better, keep them final but ensure they are only loaded when needed if we had a provider.
+    // However, the current architecture passes them in the builder.
+    // Let's implement a simple way to keep only a certain amount of images in memory if needed,
+    // but for now, let's just make sure we aren't holding massive redundant data.
 
     private Book(Builder b) {
         this.title = Objects.requireNonNullElse(b.title, "Unknown Title");

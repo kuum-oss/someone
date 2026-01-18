@@ -1,5 +1,8 @@
 package org.example.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
@@ -9,8 +12,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class GenreImageService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(GenreImageService.class);
     private final Map<String, ImageIcon> cache = new ConcurrentHashMap<>();
-    private static final String DEFAULT_GIF_URL = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJqZ3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1z/3o7bu3XilJ5BOiSGic/giphy.gif"; // Пример заглушки
+    private static final String DEFAULT_GIF_URL = "https://media.giphy.com/media/3o7bu3XilJ5BOiSGic/giphy.gif";
 
     // Маппинг жанров на GIF-ки (используем проверенные ссылки или ключевые слова для поиска)
     private static final Map<String, String> GENRE_ICONS = new HashMap<>();
@@ -55,8 +59,12 @@ public class GenreImageService {
                     Image img = icon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH);
                     return new ImageIcon(img);
                 }
+            } else {
+                LOGGER.warn("Icon not found in resources: /icons/{}", iconName);
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            LOGGER.error("Error loading icon from resource: {}", iconName, e);
+        }
         return null;
     }
 

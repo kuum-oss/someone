@@ -1,14 +1,16 @@
 package org.example.service;
 
 import org.example.model.Book;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import java.io.File;
-import java.io.IOException;
 import java.util.*;
 import java.util.function.Consumer;
 
 public class LibraryScanner extends SwingWorker<Void, Integer> {
+    private static final Logger LOGGER = LoggerFactory.getLogger(LibraryScanner.class);
     private final List<File> files;
     private final List<Book> currentBooks;
     private final MetadataService metadataService;
@@ -35,7 +37,11 @@ public class LibraryScanner extends SwingWorker<Void, Integer> {
 
     @Override
     protected Void doInBackground() {
-        scan(files);
+        try {
+            scan(files);
+        } catch (Exception e) {
+            LOGGER.error("Critical error during library scanning", e);
+        }
         return null;
     }
 
@@ -48,8 +54,12 @@ public class LibraryScanner extends SwingWorker<Void, Integer> {
                     scan(Arrays.asList(children));
                 }
             } else if (isBookFile(f)) {
-                currentBooks.add(metadataService.extractMetadata(f.toPath()));
-                publish(currentBooks.size());
+                try {
+                    currentBooks.add(metadataService.extractMetadata(f.toPath()));
+                    publish(currentBooks.size());
+                } catch (Exception e) {
+                    LOGGER.warn("Failed to extract metadata from file: {}", f.getAbsolutePath(), e);
+                }
             }
         }
     }

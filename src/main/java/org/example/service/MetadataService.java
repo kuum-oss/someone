@@ -5,25 +5,37 @@ import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.sax.BodyContentHandler;
 import org.example.model.Book;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.List;
+import java.util.Optional;
 
 public class MetadataService {
 
-    private final AutoDetectParser parser = new AutoDetectParser();
-    private final ExternalMetadataService external = new ExternalMetadataService();
+    private static final Logger LOGGER = LoggerFactory.getLogger(MetadataService.class);
+    private final AutoDetectParser parser;
+    private final ExternalMetadataService external;
+
+    public MetadataService() {
+        this(new AutoDetectParser(), new ExternalMetadataService());
+    }
+
+    public MetadataService(AutoDetectParser parser, ExternalMetadataService external) {
+        this.parser = parser;
+        this.external = external;
+    }
 
     public Book extractMetadata(Path path) {
-
         Metadata md = new Metadata();
 
         try (InputStream in = Files.newInputStream(path)) {
             parser.parse(in, new BodyContentHandler(-1), md, new ParseContext());
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            LOGGER.error("Error parsing metadata for file: {}", path, e);
+        }
 
         String title = normalizeTitle(defaultIfBlank(md.get("dc:title"), stripExtension(path.getFileName().toString())));
         String author = defaultIfBlank(md.get("dc:creator"), "Unknown Author");
@@ -31,7 +43,13 @@ public class MetadataService {
         String series = defaultIfBlank(md.get("fb2:series-name"), "No Series");
         String genre = defaultIfBlank(md.get("fb2:genre"), null);
         String year = md.get("dc:date");
+        if (year == null) {
+            year = md.get("fb2:date");
+        }
         String description = defaultIfBlank(md.get("dc:description"), null);
+        if (description == null) {
+            description = md.get("fb2:annotation");
+        }
 
         if (genre == null || year == null || description == null) {
             if (genre == null) {
@@ -45,7 +63,7 @@ public class MetadataService {
             }
         }
 
-        byte[] cover = extractCoverLocally(path);
+        byte[] cover = extractCoverFromTika(md);
         if (cover == null) {
             cover = external.fetchCover(title, author).orElse(null);
         }
@@ -66,28 +84,16 @@ public class MetadataService {
                 .build();
     }
 
-    private byte[] extractCoverLocally(Path path) {
-        try (InputStream in = Files.newInputStream(path)) {
-            Metadata md = new Metadata();
-            parser.parse(in, new BodyContentHandler(-1), md, new ParseContext());
-            return extractCoverFromTika(md);
-        } catch (Exception ignored) {}
-        return null;
-    }
-
     private byte[] extractCoverFromTika(Metadata md) {
-        // Some parsers (like FB2 or EPUB via Tika) might put cover in metadata
-        // although usually it's more complex. For now, we check common fields.
-        String[] coverFields = {"resource-name", "Content-Location", "thumbnail"};
-        for (String field : coverFields) {
-            String value = md.get(field);
-            if (value != null && (value.toLowerCase().endsWith(".jpg") || value.toLowerCase().endsWith(".png"))) {
-                // This is just a path, not the actual bytes. 
-                // Tika usually doesn't give raw bytes for images in Metadata object easily 
-                // without custom handlers.
+        String base64 = md.get("fb2:cover");
+        if (base64 != null && !base64.isBlank()) {
+            try {
+                return java.util.Base64.getDecoder().decode(base64.replaceAll("\\s", ""));
+            } catch (Exception e) {
+                LOGGER.warn("Failed to decode base64 cover", e);
             }
         }
-        return null; 
+        return null;
     }
 
     private String normalizeLanguage(String lang) {

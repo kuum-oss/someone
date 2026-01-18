@@ -92,8 +92,6 @@ public class BookLibraryGui extends JFrame {
         tree.setShowsRootHandles(true);
         tree.setCellRenderer(new BookTreeCellRenderer());
 
-        add(new JScrollPane(tree), BorderLayout.CENTER);
-
         detailsPanel = new BookDetailsPanel(messages);
         add(detailsPanel, BorderLayout.EAST);
 
@@ -138,7 +136,7 @@ public class BookLibraryGui extends JFrame {
         exitButton.addActionListener(e -> exitApplication());
 
         JPanel top = new JPanel(new BorderLayout());
-        top.add(statusLabel, BorderLayout.CENTER);
+        top.add(new JLabel(" "), BorderLayout.CENTER);
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         buttons.add(exitButton);
@@ -405,7 +403,7 @@ public class BookLibraryGui extends JFrame {
 
         LibraryScanner scanner = new LibraryScanner(files, currentBooks, metadataService, 
             processed -> {
-                int total = currentBooks.size();
+                int total = approxTotal;
                 int remaining = total - processed;
                 long elapsed = System.currentTimeMillis() - startTime;
 
@@ -418,7 +416,7 @@ public class BookLibraryGui extends JFrame {
                                 messages.getString("status.processed"),
                                 processed,
                                 total,
-                                remaining,
+                                Math.max(0, remaining),
                                 formatTime(elapsed)
                         )
                 );

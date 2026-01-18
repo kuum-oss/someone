@@ -1,12 +1,15 @@
 package org.example.ui.components;
 
 import org.example.model.Book;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import java.awt.*;
 import java.util.ResourceBundle;
 
 public class BookDetailsPanel extends JPanel {
+    private static final Logger LOGGER = LoggerFactory.getLogger(BookDetailsPanel.class);
     private final JLabel coverLabel;
     private final JLabel authorPhotoLabel;
     private final JTextArea infoArea;

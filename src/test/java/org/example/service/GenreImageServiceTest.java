@@ -1,12 +1,16 @@
 package org.example.service;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import javax.swing.*;
+import java.awt.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class GenreImageServiceTest {
     @Test
     public void testGetGenreIcon() {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "Skipping GUI test in headless environment");
+        
         GenreImageService service = new GenreImageService();
         ImageIcon fantasyIcon = service.getGenreIcon("Fantasy");
         assertNotNull(fantasyIcon, "Icon for Fantasy should not be null");
@@ -27,6 +31,8 @@ public class GenreImageServiceTest {
 
     @Test
     public void testDefaultBookIcon() {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "Skipping GUI test in headless environment");
+        
         GenreImageService service = new GenreImageService();
         ImageIcon defaultIcon = service.getDefaultBookIcon();
         assertNotNull(defaultIcon, "Default book icon should not be null");

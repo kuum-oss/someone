@@ -2,19 +2,21 @@ package org.example;
 
 import com.formdev.flatlaf.themes.FlatMacDarkLaf;
 import com.formdev.flatlaf.themes.FlatMacLightLaf;
-import com.formdev.flatlaf.util.SystemInfo;
 import org.example.ui.BookLibraryGui;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 
 public class Main {
+    private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
+
     public static void main(String[] args) {
         try {
-            System.out.println("Starting application...");
+            LOGGER.info("Starting application...");
             
             // Подавляем предупреждения о Log4j2 и нативном доступе
             System.setProperty("log4j2.disable.jmx", "true");
-            System.setProperty("log4j2.level", "ERROR");
             System.setProperty("apple.awt.application.appearance", "system");
             
             // Настройка темы в зависимости от системы (особенно важно для Mac M1)
@@ -31,16 +33,14 @@ public class Main {
                 try {
                     BookLibraryGui gui = new BookLibraryGui();
                     gui.setVisible(true);
-                    System.out.println("GUI is visible.");
+                    LOGGER.info("GUI is visible.");
                 } catch (Exception e) {
-                    System.err.println("Error during GUI creation: " + e.getMessage());
-                    e.printStackTrace();
+                    LOGGER.error("Error during GUI creation", e);
                     JOptionPane.showMessageDialog(null, "Ошибка при запуске интерфейса: " + e.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
                 }
             });
         } catch (Exception e) {
-            System.err.println("Fatal error during startup: " + e.getMessage());
-            e.printStackTrace();
+            LOGGER.error("Fatal error during startup", e);
         }
     }
 

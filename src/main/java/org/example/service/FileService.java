@@ -1,14 +1,19 @@
 package org.example.service;
 
 import org.example.model.Book;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.*;
 
 public class FileService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(FileService.class);
+
     public void organizeBook(Book book, Path baseDir) throws IOException {
         if (Thread.currentThread().isInterrupted()) {
+            LOGGER.info("Organization interrupted before processing book: {}", book.getTitle());
             return;
         }
         Path root = baseDir.getFileName() != null &&
@@ -24,13 +29,26 @@ public class FileService {
             target = target.resolve(safe(book.getSeries()));
         }
 
-        Files.createDirectories(target);
+        try {
+            Files.createDirectories(target);
 
-        Files.copy(
-                book.getFilePath(),
-                target.resolve(book.getFilePath().getFileName()),
-                StandardCopyOption.REPLACE_EXISTING
-        );
+            if (Thread.currentThread().isInterrupted()) {
+                LOGGER.info("Organization interrupted after creating directory: {}", target);
+                return;
+            }
+
+            Path sourcePath = book.getFilePath();
+            Path targetPath = target.resolve(sourcePath.getFileName());
+
+            // Используем copy + REPLACE_EXISTING, но можно рассмотреть move, если файлы на том же диске.
+            // Для безопасности оставляем copy.
+            Files.copy(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            LOGGER.debug("Successfully copied book '{}' to '{}'", book.getTitle(), targetPath);
+
+        } catch (IOException e) {
+            LOGGER.error("Failed to organize book '{}': {}", book.getTitle(), e.getMessage(), e);
+            throw e;
+        }
     }
 
     private String safe(String s) {
